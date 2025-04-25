@@ -1,5 +1,15 @@
 import json
 
+
+def bcd_to_str(bcd_hex):
+    return ''.join(f"{(byte >> 4) & 0xF}{byte & 0xF}" for byte in bytes.fromhex(bcd_hex))
+def hex_to_ascii(hex_str):
+    try:
+        ascii_str = bytes.fromhex(hex_str).decode('ascii')
+        return ascii_str
+    except ValueError as e:
+        return f"Error decoding hex: {e}"
+
 def split_data(txt_content):
     txt_content = txt_content.replace(" ", "").upper()
 
@@ -120,11 +130,11 @@ def get_extra_desc(extra_info_id, extra_info_len, extra_body):
             while len(extra_body) >= 24:
                 part = extra_body[:24]
                 entry = {
-                    "mcc": part[0:4],
-                    "mnc": part[4:6],
-                    "ci": part[6:14],
-                    "lac": part[14:22],
-                    "rssi": part[22:24]
+                    "Mobile country code": part[0:4],
+                    "Network code": part[4:6],
+                    "Cell Tower id": part[6:14],
+                    "Location area code": part[14:22],
+                    "Signal strenght": part[22:24]
                 }
                 result["parsed"].append(entry)
                 extra_body = extra_body[24:]
@@ -132,15 +142,17 @@ def get_extra_desc(extra_info_id, extra_info_len, extra_body):
             while len(extra_body) >= 26:
                 part = extra_body[:26]
                 entry = {
-                    "mcc": part[0:4],
-                    "mnc": part[4:8],
-                    "ci": part[8:16],
-                    "lac": part[16:24],
-                    "rssi": part[24:26]
+                    "Mobile country code": int(part[0:4],16),
+                    "Network code": part[4:8],
+                    "Cell Tower id": part[8:16],
+                    "Location": part[16:24],
+                    "Signal": part[24:26]
                 }
                 result["parsed"].append(entry)
                 extra_body = extra_body[26:]
-
+    elif extra_info_id == "F2":
+        result["desc"] = "Softwawre  Ver"
+        result["parsed"].append(hex_to_ascii(extra_body))
     elif extra_info_id == "F3":
         result["desc"] = "Bluetooth List"
         mask_ble = extra_body[:2]
@@ -191,59 +203,102 @@ def get_extra_desc(extra_info_id, extra_info_len, extra_body):
             })
             extra_body = extra_body[14:]
 
+
     elif extra_info_id == "F6":
         result["desc"] = "Trigger Type and Sensors Information"
-        while len(extra_body) >= 4:
-            mask = extra_body[:4]
-            entry = {"mask": mask}
+        sensor_info = []
+        data_type = extra_body[:2]
+        mask_hex = extra_body[2:4]
+        sensor_info.append(f"{data_type}(Data type)")
+        sensor_info.append(f"{mask_hex}(Mask)")
+        extra_body = extra_body[4:]
+        mask = int(mask_hex, 16)
+        if mask & 0x01:
+            light = int(extra_body[:4],16)
+            sensor_info.append(f"{light}(Light)")
+            extra_body = extra_body[4:]
+        if mask & 0x02:
+            temperature =  int(extra_body[:4],16)/10
+            sensor_info.append(f"{temperature}(Temperature C)")
+            extra_body = extra_body[4:]
+        if mask & 0x04:
+            humidity =  int(extra_body[:4],16)/10
+            sensor_info.append(f"{humidity}(Humidity RH)")
+            extra_body = extra_body[4:]
+        if mask & 0x08:
+            accelerometer = extra_body[:12]
+            sensor_info.append(f"{accelerometer}(Accelerometer)")
+            extra_body = extra_body[12:]
+        if mask & 0x10:
+            limit = extra_body[:20]
+            sensor_info.append(f"{limit}(Limit)")
+            extra_body = extra_body[20:]
+        if mask & 0x20:
+            res1 =  int(extra_body[:4],16)
+            sensor_info.append(f"{res1}(Res1)")
+            extra_body = extra_body[4:]
+        if mask & 0x40:
+            res2 =  int(extra_body[:4],16)
+            sensor_info.append(f"{res2}(Res2)")
+            extra_body = extra_body[4:]
+        if mask & 0x80:
+            res3 =  int(extra_body[:4],16)
+            sensor_info.append(f"{res3}(Res3)")
             extra_body = extra_body[4:]
 
-            if int(mask, 16) & 0x01:
-                entry["triggerType"] = "Emergency"
-            if int(mask, 16) & 0x02:
-                entry["triggerType"] = "Scheduled"
-            if int(mask, 16) & 0x04:
-                entry["triggerType"] = "Manual"
-            if int(mask, 16) & 0x08:
-                entry["sensorStatus"] = "Active"
-            if int(mask, 16) & 0x10:
-                entry["sensorStatus"] = "Inactive"
-            if int(mask, 16) & 0x20:
-                entry["sensorStatus"] = "Faulty"
-            if int(mask, 16) & 0x40:
-                entry["sensorStatus"] = "Unknown"
-
-            result["parsed"].append(entry)
+        result["parsed"].append({
+            "dataType": data_type,
+            "mask": mask_hex,
+            "sensorInfo": sensor_info
+        })
 
     elif extra_info_id == "F7":
-        result["desc"] = "GPS Coordinates"
-        while len(extra_body) >= 20:
-            entry = {
-                "latitude": extra_body[:10],
-                "longitude": extra_body[10:20]
-            }
-            result["parsed"].append(entry)
-            extra_body = extra_body[20:]
+        result["desc"] = "Battery info"
+        charging_state_map = {
+            0: "Invalid",
+            1: "Uncharged",
+            2: "Charging",
+            3: "Full",
+            4: "Exceptions"
+        }
+        entry = {
+            "Voltage": int(extra_body[0:8],16),
+            "ChargingStatus": charging_state_map.get(int(extra_body[8:10], 16), "Unknown"),
+            "BatteryPercentage": int(extra_body[10:12], 16)
+        }
+        result["parsed"].append(entry)
 
     elif extra_info_id == "F8":
-        result["desc"] = "Temperature"
-        while len(extra_body) >= 4:
-            entry = {
-                "sensorId": extra_body[:2],
-                "temperature": extra_body[2:4]
-            }
-            result["parsed"].append(entry)
-            extra_body = extra_body[4:]
+        result["desc"] = "Device information"
+        working_mode_map = {
+            0: "Periodic mode",
+            1: "Trigger mode",
+            2: "Tracking mode + Trigger mode",
+            3: "Clock mode + Trigger mode",
+            4: "Periodic mode + Trigger mode"
+        }
+        # Parse components
+        working_mode = int(extra_body[:2], 16)
+        imei_bcd = extra_body[2:18]  # 8 bytes => 16 hex chars
+        iccid_bcd = extra_body[18:38]  # 10 bytes => 20 hex chars
+        device_type = bytes.fromhex(extra_body[38:58]).decode('ascii').strip('\x00')
+
+        # Final parsed result
+        parsed_result = {
+            "Working Mode": working_mode_map.get(working_mode, f"Unknown ({working_mode})"),
+            "IMEI": bcd_to_str(imei_bcd),
+            "ICCID": bcd_to_str(iccid_bcd),
+            "Device Type": device_type
+        }
+
+        result["parsed"].append(parsed_result)
+
 
     elif extra_info_id == "F9":
-        result["desc"] = "Humidity"
-        while len(extra_body) >= 4:
-            entry = {
-                "sensorId": extra_body[:2],
-                "humidity": extra_body[2:4]
-            }
-            result["parsed"].append(entry)
-            extra_body = extra_body[4:]
+        result["desc"] = "Auxiliary Information"
+
+        result["parsed"].append(extra_body)
+        extra_body = extra_body[4:]
 
     elif extra_info_id == "FA":
         result["desc"] = "Pressure"
