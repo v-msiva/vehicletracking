@@ -1,5 +1,9 @@
 import json
 
+def degrees_to_8_compass(degrees):
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    index = round(degrees / 45) % 8
+    return directions[index]
 
 def bcd_to_str(bcd_hex):
     return ''.join(f"{(byte >> 4) & 0xF}{byte & 0xF}" for byte in bytes.fromhex(bcd_hex))
@@ -59,19 +63,19 @@ def split_location(txt_content):
     loc["Status Flag"] = txt_content[:8]
     txt_content = txt_content[8:]
 
-    loc["Latitude"] = txt_content[:8]
+    loc["Latitude"] = int(txt_content[:8],16)/1000000
     txt_content = txt_content[8:]
 
-    loc["Longitude"] = txt_content[:8]
+    loc["Longitude"] = int(txt_content[:8],16)/1000000
     txt_content = txt_content[8:]
 
-    loc["Altitude"] = txt_content[:4]
+    loc["Altitude"] =int(txt_content[:4],16)
     txt_content = txt_content[4:]
 
-    loc["Speed"] = txt_content[:4]
+    loc["Speed"] = int(txt_content[:4],16)/10
     txt_content = txt_content[4:]
 
-    loc["Direction"] = txt_content[:4]
+    loc["Direction"] = degrees_to_8_compass(int(txt_content[:4],16))
     txt_content = txt_content[4:]
 
     loc["Time"] = txt_content[:12]
@@ -111,7 +115,7 @@ def get_extra_desc(extra_info_id, extra_info_len, extra_body):
         "extraInfoId": extra_info_id,
         "extraInfoLen": extra_info_len,
         "desc": "Unknown",
-        "raw": extra_body,
+        # "raw": extra_body,
         "parsed": []
     }
 
